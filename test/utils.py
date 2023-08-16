@@ -25,6 +25,7 @@ import psycopg
 TEST_DIR = Path(os.path.dirname(os.path.realpath(__file__)))
 os.chdir(TEST_DIR)
 
+RW_FRONTEND_LOG_PATH = "/Users/z28wang/singularity/risingwave/.risingwave/log/frontend-4566.log"
 PGDATA = TEST_DIR / "pgdata"
 PGHOST = "127.0.0.1"
 
@@ -188,7 +189,7 @@ class QueryRunner:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.default_db = "postgres"
+        self.default_db = "dev"
         self.default_user = "postgres"
 
     def set_default_connection_options(self, options):
@@ -451,61 +452,67 @@ class QueryRunner:
 
 class Postgres(QueryRunner):
     def __init__(self, pgdata):
-        self.port_lock = PortLock()
-        super().__init__("127.0.0.1", self.port_lock.port)
+        # self.port_lock = PortLock()
+        # super().__init__("127.0.0.1", self.port_lock.port)
+        self.port = 4566;
+        super().__init__("127.0.0.1", self.port)
         self.pgdata = pgdata
-        self.log_path = self.pgdata / "pg.log"
+        self.log_path = RW_FRONTEND_LOG_PATH
+        # self.log_path = self.pgdata / "pg.log"
         self.connections = {}
         self.cursors = {}
         self.restarted = False
+        self.risedev_script_path = "/Users/z28wang/singularity/pgbouncer/test/run_risedev.sh"
+
+    def risedev(self, command):
+        subprocess.run(["bash", self.risedev_script_path, command], capture_output=False, text=True)
+        # print(result.stdout)
+
+    def arisedev(self, command):
+        return asyncio.create_subprocess_shell(f"bash {self.risedev_script_path} {command}",stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
     def initdb(self):
-        run(
-            f"initdb -A trust --nosync --username postgres --pgdata {self.pgdata}",
-            stdout=subprocess.DEVNULL,
-        )
+        self.risedev("k")
+        self.risedev("clean-data")
+        # self.risedev("d")
+        # run(
+        #     f"initdb -A trust --nosync --username postgres --pgdata {self.pgdata}",
+        #     stdout=subprocess.DEVNULL,
+        # )
 
-        with self.conf_path.open(mode="a") as pgconf:
-            if USE_UNIX_SOCKETS:
-                pgconf.write("unix_socket_directories = '/tmp'\n")
-            pgconf.write("log_connections = on\n")
-            pgconf.write("log_disconnections = on\n")
-            pgconf.write("logging_collector = off\n")
-            # We need to make the log go to stderr so that the tests can
-            # check what is being logged.  This should be the default, but
-            # some packagings change the default configuration.
-            pgconf.write("log_destination = stderr\n")
-            # This makes tests run faster and we don't care about crash safety
-            # of our test data.
-            pgconf.write("fsync = false\n")
+        # with self.conf_path.open(mode="a") as pgconf:
+        #     if USE_UNIX_SOCKETS:
+        #         pgconf.write("unix_socket_directories = '/tmp'\n")
+        #     pgconf.write("log_connections = on\n")
+        #     pgconf.write("log_disconnections = on\n")
+        #     pgconf.write("logging_collector = off\n")
+        #     # We need to make the log go to stderr so that the tests can
+        #     # check what is being logged.  This should be the default, but
+        #     # some packagings change the default configuration.
+        #     pgconf.write("log_destination = stderr\n")
+        #     # This makes tests run faster and we don't care about crash safety
+        #     # of our test data.
+        #     pgconf.write("fsync = false\n")
 
-            # Use a consistent value across postgres versions, so test results
-            # are the same.
-            pgconf.write("extra_float_digits = 1\n")
-
-    def pgctl(self, command, **kwargs):
-        run(f"pg_ctl -w --pgdata {self.pgdata} {command}", **kwargs)
-
-    def apgctl(self, command, **kwargs):
-        return asyncio.create_subprocess_shell(
-            f"pg_ctl -w --pgdata {self.pgdata} {command}", **kwargs
-        )
+        #     # Use a consistent value across postgres versions, so test results
+        #     # are the same.
+        #     pgconf.write("extra_float_digits = 1\n")
 
     def start(self):
         try:
-            self.pgctl(f'-o "-p {self.port}" -l {self.log_path} start')
+            self.risedev("d")
         except Exception:
             print("\n\nPG_LOG\n")
-            with self.log_path.open() as f:
+            with open(self.log_path, 'r') as f:
                 print(f.read())
             raise
 
     def stop(self):
-        self.pgctl("-m fast stop", check=False)
+        self.risedev("k")
 
     def cleanup(self):
         self.stop()
-        self.port_lock.release()
+        # self.port_lock.release()
 
     def restart(self):
         self.restarted = True
@@ -513,60 +520,62 @@ class Postgres(QueryRunner):
         self.start()
 
     def reload(self):
-        if WINDOWS:
-            # SIGHUP and thus reload don't exist on Windows
-            self.restart()
-        else:
-            self.pgctl("reload")
+        self.restart()
         time.sleep(1)
 
     async def arestart(self):
-        process = await self.apgctl("-m fast restart")
+        process = await self.arisedev("d")
         await process.communicate()
 
     def nossl_access(self, dbname, auth_type):
+        raise NotImplementedError
         """Prepends a local non-SSL access to the HBA file"""
-        with self.hba_path.open() as pghba:
-            old_contents = pghba.read()
-        with self.hba_path.open(mode="w") as pghba:
-            if USE_UNIX_SOCKETS:
-                pghba.write(f"local {dbname}   all                {auth_type}\n")
-            pghba.write(f"hostnossl  {dbname}   all  127.0.0.1/32  {auth_type}\n")
-            pghba.write(f"hostnossl  {dbname}   all  ::1/128       {auth_type}\n")
-            pghba.write(old_contents)
+        # with self.hba_path.open() as pghba:
+        #     old_contents = pghba.read()
+        # with self.hba_path.open(mode="w") as pghba:
+        #     if USE_UNIX_SOCKETS:
+        #         pghba.write(f"local {dbname}   all                {auth_type}\n")
+        #     pghba.write(f"hostnossl  {dbname}   all  127.0.0.1/32  {auth_type}\n")
+        #     pghba.write(f"hostnossl  {dbname}   all  ::1/128       {auth_type}\n")
+        #     pghba.write(old_contents)
 
     def ssl_access(self, dbname, auth_type):
+        raise NotImplementedError
         """Prepends a local SSL access rule to the HBA file"""
-        with self.hba_path.open() as pghba:
-            old_contents = pghba.read()
-        with self.hba_path.open(mode="w") as pghba:
-            pghba.write(f"hostssl  {dbname}   all  127.0.0.1/32  {auth_type}\n")
-            pghba.write(f"hostssl  {dbname}   all  ::1/128       {auth_type}\n")
-            pghba.write(old_contents)
+        # with self.hba_path.open() as pghba:
+        #     old_contents = pghba.read()
+        # with self.hba_path.open(mode="w") as pghba:
+        #     pghba.write(f"hostssl  {dbname}   all  127.0.0.1/32  {auth_type}\n")
+        #     pghba.write(f"hostssl  {dbname}   all  ::1/128       {auth_type}\n")
+        #     pghba.write(old_contents)
 
     @property
     def hba_path(self):
-        return self.pgdata / "pg_hba.conf"
+        raise NotImplementedError
+        # return self.pgdata / "pg_hba.conf"
 
     @property
     def conf_path(self):
-        return self.pgdata / "postgresql.conf"
+        raise NotImplementedError
+        # return self.pgdata / "postgresql.conf"
 
     def commit_hba(self):
+        raise NotImplementedError
         """Mark the current HBA contents as non-resetable by reset_hba"""
-        with self.hba_path.open() as pghba:
-            old_contents = pghba.read()
-        with self.hba_path.open(mode="w") as pghba:
-            pghba.write("# committed-rules\n")
-            pghba.write(old_contents)
+        # with self.hba_path.open() as pghba:
+        #     old_contents = pghba.read()
+        # with self.hba_path.open(mode="w") as pghba:
+        #     pghba.write("# committed-rules\n")
+        #     pghba.write(old_contents)
 
     def reset_hba(self):
+        raise NotImplementedError
         """Remove any HBA rules that were added after the last call to commit_hba"""
-        with self.hba_path.open() as f:
-            hba_contents = f.read()
-        committed = hba_contents[hba_contents.find("# committed-rules\n") :]
-        with self.hba_path.open("w") as f:
-            f.write(committed)
+        # with self.hba_path.open() as f:
+        #     hba_contents = f.read()
+        # committed = hba_contents[hba_contents.find("# committed-rules\n") :]
+        # with self.hba_path.open("w") as f:
+        #     f.write(committed)
 
     def connection_count(self, dbname=None, users=("bouncer",)):
         """Returns the number of connections that are active

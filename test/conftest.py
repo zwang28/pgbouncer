@@ -54,21 +54,21 @@ def pg(tmp_path_factory, cert_dir):
     """Starts a new Postgres db that is shared for tests in this process"""
     pg = Postgres(tmp_path_factory.getbasetemp() / "pgdata")
     pg.initdb()
-    os.truncate(pg.hba_path, 0)
+    # os.truncate(pg.hba_path, 0)
 
-    if TLS_SUPPORT:
-        with pg.conf_path.open("a") as f:
-            cert = cert_dir / "TestCA1" / "sites" / "01-localhost.crt"
-            key = cert_dir / "TestCA1" / "sites" / "01-localhost.key"
-            f.write(f"ssl_cert_file='{cert}'\n")
-            f.write(f"ssl_key_file='{key}'\n")
+    # if TLS_SUPPORT:
+    #     with pg.conf_path.open("a") as f:
+    #         cert = cert_dir / "TestCA1" / "sites" / "01-localhost.crt"
+    #         key = cert_dir / "TestCA1" / "sites" / "01-localhost.key"
+    #         f.write(f"ssl_cert_file='{cert}'\n")
+    #         f.write(f"ssl_key_file='{key}'\n")
 
-    pg.nossl_access("all", "trust")
-    pg.nossl_access("p4", "password")
-    pg.nossl_access("p5", "md5")
-    if PG_SUPPORTS_SCRAM:
-        pg.nossl_access("p6", "scram-sha-256")
-    pg.commit_hba()
+    # pg.nossl_access("all", "trust")
+    # pg.nossl_access("p4", "password")
+    # pg.nossl_access("p5", "md5")
+    # if PG_SUPPORTS_SCRAM:
+    #     pg.nossl_access("p6", "scram-sha-256")
+    # pg.commit_hba()
 
     pg.start()
     for i in range(8):
@@ -81,24 +81,24 @@ def pg(tmp_path_factory, cert_dir):
     pg.sql("create user maxedout2;")
     pg.sql(f"create user longpass with password '{LONG_PASSWORD}';")
     pg.sql("create user stats password 'stats';")
-    if PG_SUPPORTS_SCRAM:
-        pg.sql("set password_encryption = 'md5'; create user muser1 password 'foo';")
-        pg.sql("set password_encryption = 'md5'; create user muser2 password 'wrong';")
-        pg.sql("set password_encryption = 'md5'; create user puser1 password 'foo';")
-        pg.sql("set password_encryption = 'md5'; create user puser2 password 'wrong';")
-        pg.sql(
-            "set password_encryption = 'scram-sha-256'; create user scramuser1 password '"
-            "SCRAM-SHA-256$4096:D76gvGUVj9Z4DNiGoabOBg==$RukL0Xo3Ql/2F9FsD7mcQ3GATG2fD3PA71qY1JagGDs=:BhKUwyyivFm7Tq2jDJVXSVRbRDgTWyBilZKgg6DDuYU="
-            "'"
-        )
-        pg.sql(
-            "set password_encryption = 'scram-sha-256'; create user scramuser3 password 'baz';"
-        )
-    else:
-        pg.sql("set password_encryption = 'on'; create user muser1 password 'foo';")
-        pg.sql("set password_encryption = 'on'; create user muser2 password 'wrong';")
-        pg.sql("set password_encryption = 'on'; create user puser1 password 'foo';")
-        pg.sql("set password_encryption = 'on'; create user puser2 password 'wrong';")
+    # if PG_SUPPORTS_SCRAM:
+    #     pg.sql("set password_encryption = 'md5'; create user muser1 password 'foo';")
+    #     pg.sql("set password_encryption = 'md5'; create user muser2 password 'wrong';")
+    #     pg.sql("set password_encryption = 'md5'; create user puser1 password 'foo';")
+    #     pg.sql("set password_encryption = 'md5'; create user puser2 password 'wrong';")
+    #     pg.sql(
+    #         "set password_encryption = 'scram-sha-256'; create user scramuser1 password '"
+    #         "SCRAM-SHA-256$4096:D76gvGUVj9Z4DNiGoabOBg==$RukL0Xo3Ql/2F9FsD7mcQ3GATG2fD3PA71qY1JagGDs=:BhKUwyyivFm7Tq2jDJVXSVRbRDgTWyBilZKgg6DDuYU="
+    #         "'"
+    #     )
+    #     pg.sql(
+    #         "set password_encryption = 'scram-sha-256'; create user scramuser3 password 'baz';"
+    #     )
+    # else:
+    #     pg.sql("set password_encryption = 'on'; create user muser1 password 'foo';")
+    #     pg.sql("set password_encryption = 'on'; create user muser2 password 'wrong';")
+    #     pg.sql("set password_encryption = 'on'; create user puser1 password 'foo';")
+    #     pg.sql("set password_encryption = 'on'; create user puser2 password 'wrong';")
 
     yield pg
 
@@ -124,18 +124,18 @@ def pg_log(pg):
 
     This can be useful for debugging a failure.
     """
-    with pg.log_path.open() as f:
+    with open(pg.log_path, 'r') as f:
         f.seek(0, os.SEEK_END)
         yield
         print("\n\nPG_LOG\n")
         print(f.read())
 
 
-@pytest.fixture(autouse=True)
+# @pytest.fixture(autouse=True)
 def pg_reset(pg):
     """Resets any changes to Postgres settings from previous tests"""
     pg.reset_hba()
-    os.truncate(pg.pgdata / "postgresql.auto.conf", 0)
+    # os.truncate(pg.pgdata / "postgresql.auto.conf", 0)
 
     # If a previous test restarted postgres, it was probably because of some
     # config that could only be changed across restarts. To reset those, we'll
